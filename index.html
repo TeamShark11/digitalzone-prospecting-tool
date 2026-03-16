@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Digitalzone Prospecting Tool</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      background: #f4f6f8;
+      color: #1f2937;
+    }
+    .wrap {
+      max-width: 1100px;
+      margin: 30px auto;
+      padding: 20px;
+    }
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+    }
+    h1, h2, h3 {
+      margin-top: 0;
+    }
+    input, select, textarea, button {
+      font: inherit;
+    }
+    input[type="text"], input[type="number"], textarea, select {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      box-sizing: border-box;
+      margin-top: 6px;
+      margin-bottom: 14px;
+    }
+    button {
+      background: #111827;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 16px;
+      cursor: pointer;
+      margin-right: 10px;
+      margin-top: 8px;
+    }
+    button:hover {
+      opacity: 0.92;
+    }
+    .grid {
+      display: grid;
+      gap: 20px;
+    }
+    .grid-2 {
+      grid-template-columns: 1fr 1fr;
+    }
+    .small {
+      font-size: 12px;
+      color: #64748b;
+    }
+    .pill {
+      display: inline-block;
+      background: #e2e8f0;
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 12px;
+      margin-right: 6px;
+      margin-top: 6px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      font-size: 14px;
+    }
+    th, td {
+      border-bottom: 1px solid #e5e7eb;
+      padding: 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+    .output-box {
+      white-space: pre-wrap;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 12px;
+      min-height: 120px;
+    }
+    .hidden {
+      display: none;
+    }
+    @media (max-width: 900px) {
+      .grid-2 {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Digitalzone Prospecting Tool</h1>
+      <div class="small">Single-file browser version for GitHub Pages</div>
+    </div>
+
+    <div class="card">
+      <h2>1. Upload CSV</h2>
+      <div class="small">Recommended columns: Name, Company, Job Title, Region, Function, Industry, Email, Phone, LinkedIn, Profile Fit, Market Priority, Intent Strength, Persona Coverage, Data Quality</div>
+      <input type="file" id="csvFile" accept=".csv" />
+      <button onclick="loadCSV()">Load CSV</button>
+    </div>
+
+    <div class="card">
+      <h2>2. Editable scoring weights</h2>
+      <div class="grid grid-2">
+        <div>
+          <label>Profile Fit</label>
+          <input type="number" id="wProfileFit" value="25" />
+        </div>
+        <div>
+          <label>Market Priority</label>
+          <input type="number" id="wMarketPriority" value="25" />
+        </div>
+        <div>
+          <label>Intent Strength</label>
+          <input type="number" id="wIntentStrength" value="25" />
+        </div>
+        <div>
+          <label>Persona Coverage</label>
+          <input type="number" id="wPersonaCoverage" value="15" />
+        </div>
+        <div>
+          <label>Data Quality</label>
+          <input type="number" id="wDataQuality" value="10" />
+        </div>
+      </div>
+      <button onclick="rescoreRows()">Re-score contacts</button>
+    </div>
+
+    <div class="card">
+      <h2>3. Filters</h2>
+      <div class="grid grid-2">
+        <div>
+          <label>Region</label>
+          <select id="filterRegion" onchange="renderRows()">
+            <option value="All">All</option>
+          </select>
+        </div>
+        <div>
+          <label>Function</label>
+          <select id="filterFunction" onchange="renderRows()">
+            <option value="All">All</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>4. LinkedIn paste to message</h2>
+      <label>Paste LinkedIn profile URL</label>
+      <input type="text" id="linkedinUrl" placeholder="https://www.linkedin.com/in/example-profile/" />
+      <label>Target company</label>
+      <input type="text" id="linkedinCompany" placeholder="Adobe" />
+      <button onclick="generateLinkedInMessage()">Generate LinkedIn message</button>
+      <div id="linkedinOutput" class="output-box" style="margin-top:12px;"></div>
+    </div>
+
+    <div class="card">
+      <h2>5. Company call prep</h2>
+      <label>Company</label>
+      <input type="text" id="researchCompany" placeholder="CrowdStrike" />
+      <button onclick="generateCallPrep()">Generate call prep</button>
+      <div id="callPrepOutput" class="output-box" style="margin-top:12px;"></div>
+    </div>
+
+    <div class="card">
+      <h2>6. Contact list and outreach</h2>
+      <button onclick="generateMessages()">Generate outreach for loaded contacts</button>
+      <button onclick="exportCSV()">Export outreach CSV</button>
+      <div id="tableWrap"></div>
+    </div>
+  </div>
+
+  <script>
+    let rows = [];
+    let generatedRows = [];
+
+    function parseCSVLine(line) {
+      const result = [];
+      let current = "";
+      let insideQuotes = false;
+
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        const next = line[i + 1];
+
+        if (char === '"' && insideQuotes && next === '"') {
+          current += '"';
+          i++;
+        } else if (char === '"') {
+          insideQuotes = !insideQuotes;
+        } else if (char === ',' && !insideQuotes) {
+          result.push(current);
+          current = "";
+        } else {
+          current += char;
+        }
+      }
+      result.push(current);
+      return result.map(v => v.trim());
+    }
+
+    function getWeights() {
+      return {
+        profileFit: Number(document.getElementById("wProfileFit").value || 0),
+        marketPriority: Number(document.getElementById("wMarketPriority").value || 0),
+        intentStrength: Number(document.getElementById("wIntentStrength").value || 0),
+        personaCoverage: Number(document.getElementById("wPersonaCoverage").value || 0),
+        dataQuality: Number(document.getElementById("wDataQuality").value || 0)
+      };
+    }
+
+    function calcScore(row) {
+      const w = getWeights();
+
+      const pf = Number(row["Profile Fit"] || row.profileFit || 0);
+      const mp = Number(row["Market Priority"] || row.marketPriority || 0);
+      const isv = Number(row["Intent Strength"] || row.intentStrength || 0);
+      const pc = Number(row["Persona Coverage"] || row.personaCoverage || 0);
+      const dq = Number(row["Data Quality"] || row.dataQuality || 0);
+
+      const score =
+        (pf / 25) * w.profileFit +
+        (mp / 25) * w.marketPriority +
+        (isv / 25) * w.intentStrength +
+        (pc / 15) * w.personaCoverage +
+        (dq / 10) * w.dataQuality;
+
+      return Math.round(score);
+    }
+
+    function loadCSV() {
+      const file = document.getElementById("csvFile").files[0];
+      if (!file) {
+        alert("Please upload a CSV first.");
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const text = e.target.result.trim();
+        const lines = text.split(/\r?\n/).filter(Boolean);
+        if (lines.length < 2) {
+          alert("CSV looks empty.");
+          return;
+        }
+
+        const headers = parseCSVLine(lines[0]);
+        rows = lines.slice(1).map((line) => {
+          const values = parseCSVLine(line);
+          const obj = {};
+          headers.forEach((h, i) => {
+            obj[h] = values[i] || "";
+          });
+          obj.Score = calcScore(obj);
+          return obj;
+        });
+
+        populateFilters();
+        renderRows();
+      };
+      reader.readAsText(file);
+    }
+
+    function populateFilters() {
+      const regionSelect = document.getElementById("filterRegion");
+      const functionSelect = document.getElementById("filterFunction");
+
+      const regions = [...new Set(rows.map(r => r.Region).filter(Boolean))];
+      const functions = [...new Set(rows.map(r => r.Function).filter(Boolean))];
+
+      regionSelect.innerHTML = '<option value="All">All</option>';
+      functionSelect.innerHTML = '<option value="All">All</option>';
+
+      regions.forEach(r => {
+        const opt = document.createElement("option");
+        opt.value = r;
+        opt.textContent = r;
+        regionSelect.appendChild(opt);
+      });
+
+      functions.forEach(f => {
+        const opt = document.createElement("option");
+        opt.value = f;
+        opt.textContent = f;
+        functionSelect.appendChild(opt);
+      });
+    }
+
+    function rescoreRows() {
+      rows = rows.map(r => {
+        r.Score = calcScore(r);
+        return r;
+      });
+      renderRows();
+    }
+
+    function getFilteredRows() {
+      const region = document.getElementById("filterRegion").value;
+      const func = document.getElementById("filterFunction").value;
+
+      return rows.filter(r => {
+        if (region !== "All" && r.Region !== region) return false;
+        if (func !== "All" && r.Function !== func) return false;
+        return true;
+      });
+    }
+
+    function generateMessage(row) {
+      const firstName = (row.Name || "there").split(" ")[0];
+      const company = row.Company || "your team";
+      const title = row["Job Title"] || "marketing leader";
+      const industry = row.Industry || "your industry";
+      const func = row.Function || "marketing";
+
+      return `Hi ${firstName},
+
+I wanted to reach out because we work with enterprise teams to make outreach more relevant by showing which contacts inside target accounts are actually engaging across channels.
+
+Looking at ${company}, I thought this could be especially relevant for someone in ${func} / ${title} where message relevance, account visibility and conversion quality matter.
+
+For ${industry}, we often see the challenge is not just generating activity, but understanding who in the buying group is genuinely active and worth follow-up.
+
+Would it be useful to compare notes?
+
+Best,
+Martin
+
+P.S. Happy to share a short example of how teams use contact-level engagement visibility to sharpen follow-up.`;
+    }
+
+    function generateMessages() {
+      generatedRows = rows.map(r => {
+        return {
+          ...r,
+          Message: generateMessage(r)
+        };
+      });
+      renderRows();
+    }
+
+    function renderRows() {
+      const data = generatedRows.length ? generatedRows : rows;
+      const filtered = data.filter(r => {
+        const region = document.getElementById("filterRegion").value;
+        const func = document.getElementById("filterFunction").value;
+        if (region !== "All" && r.Region !== region) return false;
+        if (func !== "All" && r.Function !== func) return false;
+        return true;
+      });
+
+      const wrap = document.getElementById("tableWrap");
+
+      if (!filtered.length) {
+        wrap.innerHTML = '<div class="small">No rows loaded yet.</div>';
+        return;
+      }
+
+      let html = `
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Company</th>
+              <th>Job Title</th>
+              <th>Region</th>
+              <th>Function</th>
+              <th>Email</th>
+              <th>Phone</th>
+              <th>LinkedIn</th>
+              <th>Score</th>
+              <th>Message</th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
+
+      filtered.forEach(r => {
+        html += `
+          <tr>
+            <td>${escapeHtml(r.Name || "")}</td>
+            <td>${escapeHtml(r.Company || "")}</td>
+            <td>${escapeHtml(r["Job Title"] || "")}</td>
+            <td>${escapeHtml(r.Region || "")}</td>
+            <td>${escapeHtml(r.Function || "")}</td>
+            <td>${escapeHtml(r.Email || "")}</td>
+            <td>${escapeHtml(r.Phone || "")}</td>
+            <td>${escapeHtml(r.LinkedIn || "")}</td>
+            <td>${escapeHtml(String(r.Score || ""))}</td>
+            <td><div class="output-box">${escapeHtml(r.Message || "")}</div></td>
+          </tr>
+        `;
+      });
+
+      html += "</tbody></table>";
+      wrap.innerHTML = html;
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function exportCSV() {
+      const data = generatedRows.length ? generatedRows : rows;
+      if (!data.length) {
+        alert("No data to export.");
+        return;
+      }
+
+      const headers = ["Name","Company","Job Title","Region","Function","Industry","Email","Phone","LinkedIn","Score","Message"];
+      const lines = [headers.join(",")];
+
+      data.forEach(r => {
+        const line = headers.map(h => {
+          const val = (r[h] || "").toString().replaceAll('"', '""').replace(/\n/g, " ");
+          return `"${val}"`;
+        }).join(",");
+        lines.push(line);
+      });
+
+      const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "digitalzone_outreach_export.csv";
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function generateLinkedInMessage() {
+      const url = document.getElementById("linkedinUrl").value.trim();
+      const company = document.getElementById("linkedinCompany").value.trim() || "your team";
+
+      if (!url) {
+        alert("Paste a LinkedIn profile URL first.");
+        return;
+      }
+
+      let slug = url.split("/").filter(Boolean).pop() || "prospect";
+      slug = slug.replace(/\?.*/, "").replaceAll("-", " ").replaceAll("_", " ");
+      const name = slug.split(" ").map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(" ");
+
+      const firstName = name.split(" ")[0];
+
+      const text = `Prospect: ${name}
+
+Company context: ${company}
+
+Generated outreach:
+
+Hi ${firstName},
+
+I came across your profile and thought it made sense to reach out.
+
+At Digitalzone, we help teams improve outreach relevance by showing which contacts inside target accounts are actually engaging across channels, so follow-up is more precise and conversion-friendly.
+
+Thought this could be relevant for ${company} if message relevance and buying-group visibility are priorities.
+
+Would it be useful to compare notes?
+
+Best,
+Martin
+
+P.S. Happy to share a short example if helpful.`;
+
+      document.getElementById("linkedinOutput").textContent = text;
+    }
+
+    function generateCallPrep() {
+      const company = document.getElementById("researchCompany").value.trim() || "the account";
+
+      const text = `Call prep for ${company}
+
+Likely priorities:
+- Better quality pipeline
+- More relevant outreach by persona
+- Visibility into buying-group engagement
+
+Likely pain points:
+- Too much volume, not enough context
+- Hard to see which contacts inside accounts are active
+- Follow-up is often based on incomplete signals
+
+Useful proof points:
+- Contact-level journey visibility
+- Persona-led nurture
+- More actionable sales follow-up
+
+Discovery questions:
+- How are you deciding which contacts inside target accounts deserve follow-up today?
+- Where are the biggest blind spots between campaign engagement and sales action?
+- How are you measuring buying-group depth rather than just individual responses?`;
+
+      document.getElementById("callPrepOutput").textContent = text;
+    }
+  </script>
+</body>
+</html>
